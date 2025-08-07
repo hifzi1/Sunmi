@@ -1,0 +1,118 @@
+/*
+SunmiBillingApp - Kotlin Android App for Sunmi V2S
+Functions:
+- إدارة المنتجات
+- إنشاء وطباعة الفواتير
+- إرسال الفاتورة عبر واتساب
+- حفظ نسخة PDF
+- دعم كامل لـ Sunmi Print SDK
+*/
+
+// MainActivity.kt
+class MainActivity : AppCompatActivity() {
+    private lateinit var productList: MutableList<Product>
+    private lateinit var adapter: ProductAdapter
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        // طباعة شعار المتجر
+        SunmiPrintHelper.getInstance().initSunmiPrinterService(this)
+
+        productList = mutableListOf(
+            Product("بيبسي", 3.0),
+            Product("ماء", 2.0)
+        )
+
+        adapter = ProductAdapter(productList)
+        recyclerView.adapter = adapter
+
+        btnPrint.setOnClickListener {
+            val receipt = ReceiptGenerator.generate(productList)
+            SunmiPrintHelper.getInstance().printText(receipt)
+            SunmiPrintHelper.getInstance().lineWrap(3)
+            PDFHelper.saveToPDF(this, receipt)
+        }
+
+        btnWhatsApp.setOnClickListener {
+            val text = ReceiptGenerator.generate(productList)
+            val intent = Intent().apply {
+                action = Intent.ACTION_SEND
+                putExtra(Intent.EXTRA_TEXT, text)
+                type = "text/plain"
+                `package` = "com.whatsapp"
+            }
+            startActivity(intent)
+        }
+    }
+}
+
+// Product.kt
+data class Product(val name: String, val price: Double)
+
+// ProductAdapter.kt (لـ RecyclerView)
+class ProductAdapter(private val items: List<Product>) : RecyclerView.Adapter<ProductAdapter.ViewHolder>() {
+    inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        val name: TextView = itemView.findViewById(R.id.name)
+        val price: TextView = itemView.findViewById(R.id.price)
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_product, parent, false)
+        return ViewHolder(view)
+    }
+
+    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+        val product = items[position]
+        holder.name.text = product.name
+        holder.price.text = "${product.price} ريال"
+    }
+
+    override fun getItemCount() = items.size
+}
+
+// ReceiptGenerator.kt
+object ReceiptGenerator {
+    fun generate(products: List<Product>): String {
+        val sb = StringBuilder()
+        sb.appendLine("سمات للحاسب الآلي")
+        sb.appendLine("أبها - المملكة العربية السعودية")
+        sb.appendLine("-------------------------")
+        var total = 0.0
+        for (p in products) {
+            sb.appendLine("${p.name}  ${p.price} ريال")
+            total += p.price
+        }
+        sb.appendLine("-------------------------")
+        sb.appendLine("الإجمالي: $total ريال")
+        sb.appendLine("${getDateTime()}")
+        sb.appendLine("شكراً لتعاملكم معنا 🤝")
+        return sb.toString()
+    }
+
+    private fun getDateTime(): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+        return sdf.format(Date())
+    }
+}
+
+// PDFHelper.kt
+object PDFHelper {
+    fun saveToPDF(context: Context, text: String) {
+        val dir = File(context.getExternalFilesDir(null), "SunmiInvoices")
+        if (!dir.exists()) dir.mkdirs()
+        val fileName = "invoice_${System.currentTimeMillis()}.pdf"
+        val file = File(dir, fileName)
+
+        val writer = PdfWriter(file)
+        val pdfDoc = PdfDocument(writer)
+        val document = Document(pdfDoc)
+        document.add(Paragraph(text))
+        document.close()
+    }
+}
+
+// AndroidManifest.xml (إضافة التصاريح)
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
